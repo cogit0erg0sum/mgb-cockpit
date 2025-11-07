@@ -27,7 +27,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-       - name: Run refresh script
+      - name: Run refresh script
         run: |
           echo "Current directory:"
           pwd
