@@ -27,9 +27,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run refresh script
+       - name: Run refresh script
         run: |
-          python engine/auto_refresh.py
+          echo "Current directory:"
+          pwd
+          echo "Listing contents:"
+          ls -R
+          python ./engine/auto_refresh.py
 
       - name: Commit & push changes (if any)
         run: |
