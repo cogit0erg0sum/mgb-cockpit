@@ -23,6 +23,29 @@ DASH = DATA / "dashboard.csv"
 WL   = DATA / "watchlist.csv"
 FUND = DATA / "fundamentals.csv"
 
+from pathlib import Path
+import json
+
+META = Path(DATA) / "metadata.json"
+
+def _load_meta():
+    try:
+        if META.exists():
+            return json.loads(META.read_text())
+    except Exception:
+        pass
+    return {}
+
+meta = _load_meta()
+if meta.get("last_updated_ist"):
+    st.caption(
+        f"🕒 Last updated: {meta['last_updated_ist']} · "
+        f"Signals: {meta.get('rows_dashboard','?')} · "
+        f"Fundamentals: {meta.get('rows_fundamentals','?')}"
+    )
+else:
+    st.caption("🕒 Last updated: unknown (run refresh once)")
+
 # -------- App setup --------
 st.set_page_config(page_title="Multibagger Cockpit (Simple)", layout="wide")
 st.title("🟢 Multibagger Cockpit — Simple")

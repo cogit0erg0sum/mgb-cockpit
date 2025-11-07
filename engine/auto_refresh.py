@@ -2,6 +2,8 @@
 import pathlib
 from datetime import datetime
 import pandas as pd
+import json
+from zoneinfo import ZoneInfo
 
 from screener_core import compute_dashboard
 from fundamentals_core import compute_fundamentals
@@ -26,6 +28,19 @@ def main():
 
     print(f"[{datetime.now().isoformat()}] Refreshed: signals={n1}, fundamentals={n2}")
     print(f"Updated: {DASH} and {FUND}")
+
+        # --- write metadata (IST + UTC + row counts) ---
+    ist = ZoneInfo("Asia/Kolkata")
+    stamp_utc = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+    stamp_ist = datetime.now(ist).strftime("%Y-%m-%d %H:%M:%S %Z")
+    meta = {
+        "last_updated_utc": stamp_utc,
+        "last_updated_ist": stamp_ist,
+        "rows_dashboard": int(n1),
+        "rows_fundamentals": int(n2)
+    }
+    (DATA / "metadata.json").write_text(json.dumps(meta, indent=2))
+    print(f"Metadata written with IST timestamp: {stamp_ist}")
 
 if __name__ == "__main__":
     main()

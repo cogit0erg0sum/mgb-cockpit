@@ -42,7 +42,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add app/data/dashboard.csv app/data/fundamentals.csv
+          git add app/data/dashboard.csv app/data/fundamentals.csv app/data/metadata.json
           if ! git diff --cached --quiet; then
             git commit -m "Auto-refresh data ($(date -u +'%Y-%m-%d %H:%M UTC'))"
             git push
