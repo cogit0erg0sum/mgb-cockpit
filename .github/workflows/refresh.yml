@@ -1,0 +1,44 @@
+name: Nightly data refresh
+
+on:
+  schedule:
+    # 01:00 UTC daily ≈ 06:30 IST
+    - cron: '0 1 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run refresh script
+        run: |
+          python engine/auto_refresh.py
+
+      - name: Commit & push changes (if any)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add app/data/dashboard.csv app/data/fundamentals.csv
+          if ! git diff --cached --quiet; then
+            git commit -m "Auto-refresh data ($(date -u +'%Y-%m-%d %H:%M UTC'))"
+            git push
+          else
+            echo "No data changes to commit."
+          fi
