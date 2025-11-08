@@ -5,6 +5,7 @@ import pandas as pd
 import yfinance as yf
 import streamlit as st
 from datetime import datetime
+from app.ui.tabs import add_manage, signals, detail, fundamentals, valuation, help_, diag
 
 # -------- Paths & imports --------
 ROOT = pathlib.Path(__file__).resolve().parents[1]   # .../mgb-cockpit
@@ -26,6 +27,28 @@ FUND = DATA / "fundamentals.csv"
 # -------- App setup --------
 st.set_page_config(page_title="Multibagger Cockpit (Simple)", layout="wide")
 st.title("🟢 Multibagger Cockpit — Simple")
+
+# ---- Last updated banner (IST) ----
+from datetime import datetime, timezone
+try:
+    from zoneinfo import ZoneInfo  # py>=3.9
+except Exception:
+    ZoneInfo = None
+
+def _fmt_ist(ts: float | None):
+    if not ts:
+        return "—"
+    dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+    if ZoneInfo:
+        dt = dt.astimezone(ZoneInfo("Asia/Kolkata"))
+    return dt.strftime("%Y-%m-%d %H:%M:%S IST")
+
+dash_mtime = DATA.joinpath("dashboard.csv").stat().st_mtime if DATA.joinpath("dashboard.csv").exists() else None
+fund_mtime = DATA.joinpath("fundamentals.csv").stat().st_mtime if DATA.joinpath("fundamentals.csv").exists() else None
+
+st.caption(
+    f"🕒 Last updated — Dashboard: **{_fmt_ist(dash_mtime)}** · Fundamentals: **{_fmt_ist(fund_mtime)}**"
+)
 
 # -------- Helpers --------
 def _get_price(sym_full: str) -> float | None:
