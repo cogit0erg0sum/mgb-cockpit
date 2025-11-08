@@ -101,6 +101,9 @@ def _to_cr(x):
 # Keep dashboard cached in session
 if "dash" not in st.session_state:
     st.session_state["dash"] = _load_dash()
+if "fund" not in st.session_state:
+    st.session_state["fund"] = _load_fund()
+st.caption(f"🧪 Debug — Fundamentals rows: {len(st.session_state['fund'])}")  
 
 # -------- Tabs --------
 tabs = st.tabs(["➕ Add/Manage", "📋 Signals", "📈 Detail", "🧾 Fundamentals", "💰 Valuation", "ℹ️ Help"])

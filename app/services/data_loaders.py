@@ -45,7 +45,20 @@ def load_dash() -> pd.DataFrame:
     return load_csv(DASH)
 
 def load_fund() -> pd.DataFrame:
-    return load_csv(FUND)
+    """Load fundamentals.csv from app/data. Always return a DataFrame."""
+    path = DATA / "fundamentals.csv"
+    if not path.exists():
+        # file not found -> empty DF (so UI can show a helpful message)
+        return pd.DataFrame()
+    try:
+        df = pd.read_csv(path)
+        # ensure at least the symbol column exists so tabs won’t break
+        if "symbol" not in df.columns:
+            df["symbol"] = ""
+        return df
+    except Exception:
+        # on any read error, fail gracefully
+        return pd.DataFrame()
 
 def load_meta() -> dict:
     try:

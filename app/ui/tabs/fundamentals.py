@@ -83,6 +83,7 @@ def _highlighter(data: pd.DataFrame) -> pd.DataFrame:
                 styles.loc[colvals >= bad_thr, key] = "background-color:#FFEBEE"
     return styles
 
+
 def render():
     st.subheader("🧾 Fundamentals")
 
