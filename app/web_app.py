@@ -1,5 +1,7 @@
 # app/web_app.py
 import os, sys, pathlib
+from app.services.data_loaders import load_dash, load_fund
+from app.ui.tabs import add_manage, signals, detail, fundamentals, valuation, help_
 
 # -------- Paths & imports (make packages importable) --------
 ROOT = pathlib.Path(__file__).resolve().parents[1]   # .../mgb-cockpit
@@ -110,6 +112,7 @@ tabs = st.tabs(["➕ Add/Manage", "📋 Signals", "📈 Detail", "🧾 Fundament
 
 # ========== Tab 1: Add / Manage ==========
 with tabs[0]:
+    add_manage.render()
     st.subheader("➕ Add / Manage Watchlist")
     _ensure_watchlist()
     wl_df = pd.read_csv(WL)
@@ -305,7 +308,7 @@ with tabs[2]:
 # replace the whole Tab 4 block with:
 from app.ui.tabs import fundamentals as fundamentals_tab
 with tabs[3]:
-    fundamentals_tab.render()
+    fundamentals.render()
 
 # ========== Tab 5: Valuation ==========
 with tabs[4]:

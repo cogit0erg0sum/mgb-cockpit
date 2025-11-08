@@ -1,116 +1,73 @@
 # app/ui/tabs/add_manage.py
 from __future__ import annotations
+import json, time, subprocess, importlib
+from pathlib import Path
 import pandas as pd
-from datetime import datetime
 import streamlit as st
 
-from ...config import WL
-from ...services.data_loaders import (
-    ensure_watchlist, load_csv, get_price, rebuild_signals,
-    fetch_fund_one_and_upsert, fetch_fund_bulk
-)
+DATA_DIR = Path(__file__).resolve().parents[3] / "app" / "data"
+WL_CSV   = DATA_DIR / "watchlist.csv"
+
+def _load_watchlist() -> pd.DataFrame:
+    if WL_CSV.exists():
+        try:
+            return pd.read_csv(WL_CSV)
+        except Exception:
+            pass
+    return pd.DataFrame(columns=["symbol","name","segment","buy_low","buy_high","stop","notes"])
 
 def render():
-    st.subheader("➕ Add / Manage Watchlist")
-    ensure_watchlist()
-    wl_df = load_csv(WL)
+    st.subheader("➕ Add / Manage")
 
-    # Add one
-    st.markdown("**Add a single NSE symbol** (enter without .NS)")
-    c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
-    with c1:
-        base = st.text_input("Symbol", placeholder="e.g., CUPID")
-    with c2:
-        seg = st.selectbox("Segment", ["User", "Microcap", "Smallcap", "Midcap"], index=0)
-    with c3:
-        add_one = st.button("Add", use_container_width=True)
-    with c4:
-        rebuild_now = st.button("Rebuild Signals", use_container_width=True)
+    # --- DEBUG breadcrumb so we know this tab rendered
+    st.caption("DEBUG: add_manage tab loaded")
 
-    if add_one and base.strip():
-        base_up = base.strip().upper()
-        sym = f"{base_up}.NS"
-        price = get_price(sym)
-        if price is None:
-            st.error("Symbol not found on Yahoo Finance. Check the code.")
-        else:
-            new_row = {
-                "symbol": sym,
-                "name": base_up,
-                "segment": seg,
-                "buy_low": round(price * 0.97, 2),
-                "buy_high": round(price * 1.03, 2),
-                "stop": round(price * 0.90, 2),
-                "notes": f"Added {datetime.now():%Y-%m-%d}",
-            }
-            if not wl_df.empty and (wl_df["symbol"] == sym).any():
-                for k, v in new_row.items():
-                    wl_df.loc[wl_df["symbol"] == sym, k] = v
+    # =============== Fetch Fundamentals (the button you need) ===============
+    st.markdown("#### 🔄 Fundamentals")
+    col_ff1, col_ff2 = st.columns([1, 3])
+    with col_ff1:
+        do_fetch = st.button("Fetch fundamentals", key="btn_fetch_fundamentals")
+    with col_ff2:
+        st.caption("Fetch/refresh fundamentals for all symbols in your watchlist.")
+
+    if do_fetch:
+        try:
+            # Prefer in-process call to engine.fundamentals_core
+            fc = importlib.import_module("engine.fundamentals_core")
+            if hasattr(fc, "main"):
+                fc.main()
+            elif hasattr(fc, "compute_fundamentals"):
+                fc.compute_fundamentals()
             else:
-                wl_df = pd.concat([wl_df, pd.DataFrame([new_row])], ignore_index=True)
-            wl_df.to_csv(WL, index=False)
+                # Fallback to script run (works on Streamlit Cloud too)
+                subprocess.run(["python", "engine/fundamentals_core.py"], check=True)
 
-            st.success(f"Added/updated {sym}. Rebuilding signals…")
-            rebuild_signals()
+            # Touch metadata
+            meta_path = DATA_DIR / "metadata.json"
+            meta = {}
+            if meta_path.exists():
+                try:
+                    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                except Exception:
+                    meta = {}
+            meta["fundamentals_last_updated_utc"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
-            # Auto fetch fundamentals for this symbol
+            # Reload into session if loader available
             try:
-                fetch_fund_one_and_upsert(sym)
-            except Exception as e:
-                st.warning(f"Could not fetch fundamentals now: {e}")
+                from app.services.data_loaders import load_fund
+                st.session_state["fund"] = load_fund()
+            except Exception:
+                pass
 
-            st.query_params.update({"symbol": sym})
+            st.success("Fundamentals fetched. Reloading …")
             st.rerun()
+        except Exception as e:
+            st.error(f"Fetch failed: {e}")
 
-    st.markdown("---")
+    st.divider()
 
-    # Bulk add
-    st.markdown("**Paste multiple NSE symbols** (comma or newline; without .NS)")
-    pasted = st.text_area("Symbols", height=120, placeholder="CUPID, REDINGTON, TATAMOTORS")
-    if st.button("Validate & Queue"):
-        bases = [s.strip().upper() for s in pasted.replace(",", "\n").splitlines() if s.strip()]
-        queued = []
-        for b in bases:
-            sym_i = f"{b}.NS"
-            price_i = get_price(sym_i)
-            queued.append({
-                "symbol": sym_i, "name": b,
-                "status": "✅" if price_i is not None else "❌ not found",
-                "buy_low": round(price_i * 0.97, 2) if price_i else None,
-                "buy_high": round(price_i * 1.03, 2) if price_i else None,
-                "stop": round(price_i * 0.90, 2) if price_i else None,
-            })
-        qdf = pd.DataFrame(queued)
-        st.dataframe(qdf, use_container_width=True)
-        st.session_state["queued_rows"] = [r for r in queued if r["status"] == "✅"]
-
-    if st.button("Add queued to Watchlist"):
-        rows = st.session_state.get("queued_rows", [])
-        if not rows:
-            st.warning("Nothing queued.")
-        else:
-            add_df = pd.DataFrame(rows)
-            add_df["segment"] = "User"
-            add_df["notes"] = f"Bulk add {datetime.now():%Y-%m-%d}"
-            base_df = wl_df if not wl_df.empty else pd.DataFrame(columns=add_df.columns)
-            merged = pd.concat([base_df, add_df], ignore_index=True).drop_duplicates(subset=["symbol"], keep="last")
-            merged.to_csv(WL, index=False)
-            st.success(f"Added {len(add_df)} symbols. Rebuilding signals…")
-            rebuild_signals()
-
-            try:
-                fetch_fund_bulk([r["symbol"] for r in rows], delay_sec=0.35)
-            except Exception as e:
-                st.warning(f"Fundamentals bulk fetch had issues: {e}")
-
-            st.rerun()
-
-    if rebuild_now:
-        rebuild_signals()
-
-    st.markdown("---")
-    st.caption("Current watchlist")
-    if wl_df.empty:
-        st.info("Watchlist is empty. Add some symbols.")
-    else:
-        st.dataframe(wl_df, use_container_width=True)
+    # =============== Manage Watchlist (simple view) ===============
+    st.markdown("#### 📄 Current Watchlist")
+    wl = _load_watchlist()
+    st.dataframe(wl, use_container_width=True)
