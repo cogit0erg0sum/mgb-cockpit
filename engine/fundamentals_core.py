@@ -226,4 +226,11 @@ def compute_fundamentals(watchlist_csv: str, out_csv: str, throttle_sec: float =
     }).drop_duplicates(subset=["symbol"], keep="last")
 
     out.to_csv(out_csv, index=False)
+    # append at the very end, just before return
+    from datetime import datetime, timezone
+    import json, pathlib
+    DATA_DIR = pathlib.Path(__file__).resolve().parents[1] / "app" / "data"
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    (meta := {"last_updated_utc": datetime.now(timezone.utc).isoformat()}).clear() or None
+    (DATA_DIR / "metadata.json").write_text(json.dumps({"last_updated_utc": datetime.now(timezone.utc).isoformat()}))
     return len(out)

@@ -1,20 +1,26 @@
 # app/web_app.py
 import os, sys, pathlib
+
+# -------- Paths & imports (make packages importable) --------
+ROOT = pathlib.Path(__file__).resolve().parents[1]   # .../mgb-cockpit
+APP_DIR = ROOT / "app"
+ENGINE_DIR = ROOT / "engine"
+
+# 1) add project root so `import app...` works
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+# 2) also add module folders for direct imports (optional)
+for p in (APP_DIR, ENGINE_DIR):
+    if str(p) not in sys.path:
+        sys.path.insert(0, str(p))
+
+
 import numpy as np
 import pandas as pd
 import yfinance as yf
 import streamlit as st
 from datetime import datetime
 from app.ui.tabs import add_manage, signals, detail, fundamentals, valuation, help_, diag
-
-# -------- Paths & imports --------
-ROOT = pathlib.Path(__file__).resolve().parents[1]   # .../mgb-cockpit
-APP_DIR = ROOT / "app"
-ENGINE_DIR = ROOT / "engine"
-for p in (APP_DIR, ENGINE_DIR):
-    if str(p) not in sys.path:
-        sys.path.insert(0, str(p))
-
 from indicators import rsi
 from screener_core import compute_dashboard
 from fundamentals_core import compute_fundamentals
@@ -293,217 +299,10 @@ with tabs[2]:
             else:
                 st.info("No chart data")
 
-# ========== Tab 4: Fundamentals (Show all by default; optional filters; tooltips; formatting; highlights) ==========
+# replace the whole Tab 4 block with:
+from app.ui.tabs import fundamentals as fundamentals_tab
 with tabs[3]:
-    st.subheader("🧾 Fundamentals")
-
-    # Top actions
-    left, right = st.columns([1,3])
-    with left:
-        if st.button("Fetch / Refresh Fundamentals"):
-            try:
-                with st.spinner("Fetching fundamentals (free Yahoo)…"):
-                    n = compute_fundamentals(str(WL), str(FUND), throttle_sec=0.3)
-                st.success(f"Saved fundamentals for {n} symbols.")
-            except Exception as e:
-                st.error(f"Failed: {e}")
-            st.session_state["fund"] = _load_fund()
-    with right:
-        enable_filters = st.toggle("Enable filters", value=False)
-
-    # Load
-    if "fund" not in st.session_state:
-        st.session_state["fund"] = _load_fund()
-
-    fdf = st.session_state["fund"].copy()
-    if fdf.empty:
-        st.info("No fundamentals yet. Click **Fetch / Refresh Fundamentals**.")
-        st.stop()
-
-    # Ensure required columns exist
-    needed_cols = [
-        "symbol","company","sector","industry","mcap",
-        "pe_ttm","pe_fwd","pb","peg","roe_pct","pm_pct","om_pct",
-        "de_ratio","div_yield_pct","summary","error","rev_per_share","eps_ttm"
-    ]
-    for c in needed_cols:
-        if c not in fdf.columns:
-            fdf[c] = np.nan
-
-    # Coerce numeric cols once
-    num_cols = ["mcap","pe_ttm","pe_fwd","pb","peg","roe_pct","pm_pct","om_pct",
-                "de_ratio","div_yield_pct","rev_per_share","eps_ttm"]
-    for c in num_cols:
-        fdf[c] = pd.to_numeric(fdf[c], errors="coerce")
-
-    # By default show ALL rows (no filters)
-    view = fdf.copy()
-    total_rows = len(view)
-
-    # Optional filters
-    if enable_filters:
-        colf1, colf2, colf3, colf4, colf5, colf6 = st.columns([2,1,1,1,1,1])
-        with colf1:
-            q = st.text_input("Search (symbol/company)", "")
-        with colf2:
-            pe_max = st.number_input("Max P/E (TTM)", min_value=0.0, value=60.0, step=1.0,
-                                     help="Price / Earnings (TTM). Lower can be cheaper, but cyclicals can mislead.")
-        with colf3:
-            pb_max = st.number_input("Max P/B", min_value=0.0, value=10.0, step=0.5,
-                                     help="Price / Book Value. For lenders, compare with ROE.")
-        with colf4:
-            roe_min = st.number_input("Min ROE (%)", min_value=0.0, value=0.0, step=1.0,
-                                      help="Return on Equity. Higher suggests efficient use of capital.")
-        with colf5:
-            show_only_valid = st.checkbox("Require any of: P/E, P/B, ROE, Mcap", value=False)
-        with colf6:
-            if st.button("Reset"):
-                st.rerun()
-
-        if q:
-            mask = view["symbol"].str.contains(q, case=False, na=False) | \
-                   view["company"].fillna("").str.contains(q, case=False)
-            view = view[mask]
-
-        if show_only_valid:
-            key_ok = view["pe_ttm"].notna() | view["pb"].notna() | view["roe_pct"].notna() | view["mcap"].notna()
-            view = view[key_ok]
-
-        view = view[view["pe_ttm"].fillna(1e12) <= pe_max]
-        view = view[view["pb"].fillna(1e12) <= pb_max]
-        view = view[view["roe_pct"].fillna(-1e12) >= roe_min]
-
-    # Row count
-    st.caption(f"Showing {len(view)} of {total_rows} symbols")
-
-    # ---- Table render (safe: always defines `display`) ----
-    if view.empty:
-        st.info("No rows to show. If filters are on, try Reset.")
-    else:
-        # Helper: ₹ → Cr
-        def _to_cr_local(x):
-            return x/1e7 if pd.notna(x) else np.nan
-
-        # Base columns
-        base_cols = [
-            "symbol","company","sector","industry",
-            "mcap","pe_ttm","pe_fwd","pb","peg",
-            "roe_pct","pm_pct","om_pct","de_ratio","div_yield_pct"
-        ]
-        for c in base_cols:
-            if c not in view.columns:
-                view[c] = np.nan
-
-        display = view[base_cols].copy()
-
-        # Formatted columns (0 decimals) + Mcap Cr
-        display["Mcap (₹ Cr)"] = display["mcap"].apply(_to_cr_local).round(0)
-        display["P/E"]         = display["pe_ttm"].round(0)
-        display["Fwd P/E"]     = display["pe_fwd"].round(0)
-        display["P/B"]         = display["pb"].round(0)
-        display["PEG"]         = display["peg"].round(0)
-        display["ROE %"]       = display["roe_pct"].round(0)
-        display["Profit %"]    = display["pm_pct"].round(0)
-        display["OPM %"]       = display["om_pct"].round(0)
-        display["D/E"]         = display["de_ratio"].round(0)
-        display["Div %"]       = display["div_yield_pct"].round(0)
-
-        # Drop raw numeric cols now
-        display = display.drop(columns=[
-            "mcap","pe_ttm","pe_fwd","pb","peg","roe_pct","pm_pct","om_pct","de_ratio","div_yield_pct"
-        ])
-
-        colorize = st.toggle("Highlight good/bad cells", value=True, help="Turn on conditional coloring (light green/red).")
-
-        if colorize:
-            import pandas as pd
-
-            def color_cell(val, col):
-                if pd.isna(val): return ""
-                good = bad = False
-                if col == "P/E":        good, bad = (val <= 25, val >= 60)
-                elif col == "Fwd P/E":  good, bad = (val <= 22, val >= 55)
-                elif col == "P/B":      good, bad = (val <= 3,  val >= 8)
-                elif col == "PEG":      good, bad = (val <= 1,  val >= 2)
-                elif col == "ROE %":    good, bad = (val >= 15, val <= 8)
-                elif col == "Profit %": good, bad = (val >= 10, val <= 2)
-                elif col == "OPM %":    good, bad = (val >= 15, val <= 8)
-                elif col == "D/E":      good, bad = (val <= 0.5,val >= 2)
-                elif col == "Div %":    good, bad = (val >= 2,  False)
-                if good: return "background-color:#e7f6e7;"
-                if bad:  return "background-color:#fde8e8;"
-                return ""
-
-            metric_cols = ["Mcap (₹ Cr)","P/E","Fwd P/E","P/B","PEG","ROE %","Profit %","OPM %","D/E","Div %"]
-
-            def style_fn(df_):
-                styles = pd.DataFrame("", index=df_.index, columns=df_.columns)
-                for c in metric_cols:
-                    if c in df_.columns:
-                        styles[c] = df_[c].apply(lambda v: color_cell(v, c))
-                return styles
-
-            styled = display.style.apply(style_fn, axis=None)
-            st.dataframe(styled, use_container_width=True)
-
-            with st.expander("Legend & thresholds"):
-                st.markdown("""
-- Good: **P/E ≤ 25**, **Fwd P/E ≤ 22**, **P/B ≤ 3**, **PEG ≤ 1**, **ROE ≥ 15%**, **OPM ≥ 15%**, **Profit ≥ 10%**, **D/E ≤ 0.5**, **Div ≥ 2%**  
-- Red flags: **P/E ≥ 60**, **P/B ≥ 8**, **ROE ≤ 8%**, **OPM ≤ 8%**, **Profit ≤ 2%**, **D/E ≥ 2**  
-_Tweak per sector later if you like (banks vs FMCG behave differently)._
-""")
-        else:
-            st.dataframe(
-                display,
-                use_container_width=True,
-                column_config={
-                    "symbol": st.column_config.TextColumn("Symbol", help="NSE code (with .NS suffix)."),
-                    "company": st.column_config.TextColumn("Company", help="Registered name as per exchange / Yahoo."),
-                    "sector": st.column_config.TextColumn("Sector", help="High-level industry group."),
-                    "industry": st.column_config.TextColumn("Industry", help="Specific line of business."),
-                    "Mcap (₹ Cr)": st.column_config.NumberColumn("Mcap (₹ Cr)", format="%.0f",
-                        help="Market Capitalization in Crores."),
-                    "P/E": st.column_config.NumberColumn("P/E", format="%.0f",
-                        help="Price / Earnings (TTM). Lower can be cheaper, but cyclicals can mislead."),
-                    "Fwd P/E": st.column_config.NumberColumn("Fwd P/E", format="%.0f",
-                        help="Price / forward 12m expected Earnings."),
-                    "P/B": st.column_config.NumberColumn("P/B", format="%.0f",
-                        help="Price / Book Value. For lenders, compare with ROE."),
-                    "PEG": st.column_config.NumberColumn("PEG", format="%.0f",
-                        help="P/E divided by earnings growth. ~1 can be fair for growth stocks."),
-                    "ROE %": st.column_config.NumberColumn("ROE %", format="%.0f",
-                        help="Return on Equity: Net Income / Equity. Quality proxy!"),
-                    "Profit %": st.column_config.NumberColumn("Profit %", format="%.0f",
-                        help="Net Profit Margin. Pricing power & efficiency."),
-                    "OPM %": st.column_config.NumberColumn("OPM %", format="%.0f",
-                        help="Operating Profit Margin (before interest & tax)."),
-                    "D/E": st.column_config.NumberColumn("D/E", format="%.0f",
-                        help="Debt / Equity. >2 can be risky unless stable cash flows."),
-                    "Div %": st.column_config.NumberColumn("Div %", format="%.0f",
-                        help="Dividend yield (annual)."),
-                }
-            )
-
-    # Company summary
-    st.markdown("### 📜 Company Summary")
-    if not view.empty:
-        sym_pick = st.selectbox("Pick a symbol", view["symbol"].tolist(), key="fund_pick")
-        picked = view[view["symbol"] == sym_pick].iloc[0]
-        summary = picked.get("summary")
-        if isinstance(summary, str) and summary.strip():
-            st.write(summary)
-        else:
-            st.info("Summary unavailable.")
-    else:
-        st.info("No rows match the filters above.")
-
-    # Diagnostics if available
-    if "error" in fdf.columns:
-        errs = fdf[fdf["error"].notna()]
-        if not errs.empty:
-            with st.expander("🔎 Diagnostics: symbols with missing/partial data"):
-                st.dataframe(errs[["symbol","error"]], use_container_width=True)
-                st.caption("Yahoo’s free endpoint can be intermittent. Refresh later if needed.")
+    fundamentals_tab.render()
 
 # ========== Tab 5: Valuation ==========
 with tabs[4]:
