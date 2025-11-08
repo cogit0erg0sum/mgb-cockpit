@@ -4,6 +4,86 @@ from typing import Dict, List
 import pandas as pd
 import yfinance as yf
 
+def fetch_fundamentals_one(symbol: str) -> dict:
+    """
+    Returns a single fundamentals row dict for `symbol` (e.g., 'TATAMOTORS.NS').
+    Non-throwing: returns {'symbol': symbol, 'error': '...'} if fetch fails.
+    """
+    row = {"symbol": symbol}
+
+    try:
+        tk = yf.Ticker(symbol)
+        info = tk.info or {}
+
+        row["company"]  = info.get("longName") or info.get("shortName")
+        row["sector"]   = info.get("sector")
+        row["industry"] = info.get("industry")
+        row["mcap"]     = info.get("marketCap")
+        row["pe_ttm"]   = info.get("trailingPE")
+        row["pe_fwd"]   = info.get("forwardPE")
+        row["pb"]       = info.get("priceToBook")
+        row["peg"]      = info.get("pegRatio")
+        dy = info.get("dividendYield")
+        row["div_yield_pct"] = (dy * 100) if dy is not None else None
+        row["rev_per_share"] = info.get("revenuePerShare")
+        row["eps_ttm"]       = info.get("trailingEps")
+        row["summary"]       = info.get("longBusinessSummary")
+
+        # Operating margin, ROE best-effort from info
+        om = info.get("operatingMargins")
+        row["om_pct"]  = round(om * 100, 2) if om is not None else None
+        roe = info.get("returnOnEquity")
+        row["roe_pct"] = round(roe * 100, 2) if roe is not None else None
+        row["de_ratio"] = info.get("debtToEquity")
+
+        # Profit margin from financials if available
+        try:
+            fin = tk.financials
+            if fin is not None and not fin.empty:
+                if "Net Income" in fin.index and "Total Revenue" in fin.index:
+                    ni  = float(fin.loc["Net Income"].iloc[0])
+                    rev = float(fin.loc["Total Revenue"].iloc[0]) or None
+                    row["pm_pct"] = round((ni / rev) * 100, 2) if rev else None
+        except Exception:
+            pass
+
+        # Optional deltas + fund score if you defined these helpers in this file
+        try:
+            deltas = quarterly_deltas(tk)   # your helper from earlier step
+            row.update(deltas or {})
+        except Exception:
+            pass
+
+        try:
+            row["fund_score"] = fundamental_score_row(row)
+        except Exception:
+            row["fund_score"] = None
+
+        return row
+
+    except Exception as e:
+        row["error"] = str(e)
+        return row
+
+
+def upsert_fundamentals_csv(csv_path: str, row: dict) -> None:
+    """Insert or update a single row in fundamentals.csv by symbol."""
+    try:
+        df = pd.read_csv(csv_path)
+    except Exception:
+        df = pd.DataFrame()
+
+    if "symbol" not in df.columns:
+        df = pd.DataFrame(columns=list(row.keys()))
+
+    if (df["symbol"] == row["symbol"]).any():
+        for k, v in row.items():
+            df.loc[df["symbol"] == row["symbol"], k] = v
+    else:
+        df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
+
+    df.to_csv(csv_path, index=False)
+
 SAFE_KEYS = [
     ("longName", str),
     ("sector", str),
