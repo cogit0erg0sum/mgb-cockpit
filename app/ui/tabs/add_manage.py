@@ -18,6 +18,8 @@ def _load_watchlist() -> pd.DataFrame:
 
 def render():
     st.subheader("➕ Add / Manage")
+    DATA_DIR = Path(__file__).resolve().parents[3] / "app" / "data"
+    META    = DATA_DIR / "metadata.json"
 
     # --- DEBUG breadcrumb so we know this tab rendered
     st.caption("DEBUG: add_manage tab loaded")
